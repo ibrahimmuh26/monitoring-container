@@ -1,0 +1,30 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+/secrets/
+/configs/local*
+/configs/*.local.*
+*.pem
+*.key
+
+# Runtime data and diagnostics
+/data/
+/diagnostics/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.log
+
+# Build artifacts
+/bin/
+/dist/
+coverage.out
+
+# Editor and OS files
+.DS_Store
+.idea/
+.vscode/

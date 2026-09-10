@@ -1,0 +1,48 @@
+# Proposed schema only; no parser or agent has been implemented.
+server:
+  id: example-host
+
+docker:
+  socket: unix:///var/run/docker.sock
+
+storage:
+  directory: /var/lib/monitoring-container
+  retention: 7d
+  max_total_bytes: 268435456
+
+diagnostics:
+  timeout: 10s
+  log_window: 10m
+  max_log_lines: 200
+  max_log_bytes: 131072
+
+telegram:
+  enabled: false
+  token_file: /run/secrets/telegram_bot_token
+  chat_id: ""
+
+targets:
+  - name: example-api
+    selector:
+      container_name: example-api
+    monitoring:
+      enabled: true
+      reconcile_interval: 30s
+      startup_grace_period: 60s
+      docker_health:
+        enabled: true
+        # Change only after reviewing /bin/healthcheck implementation.
+        meaning: unknown
+      http:
+        enabled: false
+        # Set URLs reachable FROM the agent container before enabling.
+        liveness_url: ""
+        readiness_url: ""
+        timeout: 3s
+        failure_threshold: 3
+        success_threshold: 3
+    recovery:
+      enabled: false
+      max_attempts_per_incident: 1
+      cooldown: 5m
+      max_attempts_per_hour: 2
