@@ -85,7 +85,11 @@ type DockerHealth struct {
 }
 
 type Recovery struct {
-	Enabled bool `yaml:"enabled"`
+	Enabled                bool          `yaml:"enabled"`
+	Timeout                time.Duration `yaml:"timeout"`
+	Cooldown               time.Duration `yaml:"cooldown"`
+	MaxAttemptsPerIncident int           `yaml:"max_attempts_per_incident"`
+	MaxAttemptsPerHour     int           `yaml:"max_attempts_per_hour"`
 }
 
 func Load(path string) (Config, error) {
@@ -122,6 +126,18 @@ func Decode(r io.Reader) (Config, error) {
 		return Config{}, errors.New("configuration must contain exactly one YAML document")
 	}
 	for i := range cfg.Targets {
+		if cfg.Targets[i].Recovery.Timeout == 0 {
+			cfg.Targets[i].Recovery.Timeout = 20 * time.Second
+		}
+		if cfg.Targets[i].Recovery.Cooldown == 0 {
+			cfg.Targets[i].Recovery.Cooldown = 5 * time.Minute
+		}
+		if cfg.Targets[i].Recovery.MaxAttemptsPerIncident == 0 {
+			cfg.Targets[i].Recovery.MaxAttemptsPerIncident = 1
+		}
+		if cfg.Targets[i].Recovery.MaxAttemptsPerHour == 0 {
+			cfg.Targets[i].Recovery.MaxAttemptsPerHour = 2
+		}
 		if cfg.Targets[i].Monitoring.DockerHealth.Meaning == "" {
 			cfg.Targets[i].Monitoring.DockerHealth.Meaning = "unknown"
 		}
@@ -159,7 +175,12 @@ func (c Config) Validate() error {
 		}
 		names[target.Name], containers[target.Selector.ContainerName] = true, true
 		if target.Recovery.Enabled {
-			return fmt.Errorf("targets[%d]: recovery is not implemented; enabled must be false", i)
+			if !c.Incidents.Enabled {
+				return fmt.Errorf("targets[%d]: recovery requires incidents.enabled", i)
+			}
+			if target.Recovery.Timeout < time.Second || target.Recovery.Timeout > time.Minute || target.Recovery.Cooldown < time.Minute || target.Recovery.Cooldown > 24*time.Hour || target.Recovery.MaxAttemptsPerIncident != 1 || target.Recovery.MaxAttemptsPerHour < 1 || target.Recovery.MaxAttemptsPerHour > 10 {
+				return fmt.Errorf("targets[%d]: recovery supports one attempt per incident, timeout 1s-1m, cooldown 1m-24h, and 1-10 attempts/hour", i)
+			}
 		}
 		switch target.Monitoring.DockerHealth.Meaning {
 		case "unknown", "liveness", "readiness":

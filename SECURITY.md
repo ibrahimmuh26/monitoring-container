@@ -2,7 +2,7 @@
 
 ## Development status
 
-No supported production release exists yet. The agent reads Docker state and optionally collects logs, persists incidents, and sends Telegram reports. It cannot restart applications. Log collection and transmission are separately opt-in; redaction cannot guarantee that arbitrary application data is safe to transmit.
+No supported production release exists yet. The agent reads Docker state and optionally collects logs, persists incidents, sends Telegram reports, and—only with an explicit narrow per-target policy—can restart an exited/dead standalone container. It is not a supported production release. Log collection and transmission are separately opt-in; redaction cannot guarantee that arbitrary application data is safe to transmit.
 
 ## Reporting vulnerabilities
 
@@ -18,4 +18,5 @@ If GitHub private vulnerability reporting is enabled, use the repository Securit
 - Ignore rules are defense in depth, not a secret scanner. Review staged files and Git history before publishing.
 - Diagnostics may contain credentials and personal information; apply redaction, access restrictions, and retention limits.
 - Readiness failures alone must not trigger restart.
-- Recovery requires explicit target authorization, persistent attempt limits, and audit evidence.
+- Recovery requires explicit target authorization, persistent attempt limits, audit evidence, and a documented maintenance inhibition procedure.
+- A read-only Docker socket mount does not prevent API mutations. Enabling recovery materially changes the agent's host-control capability.

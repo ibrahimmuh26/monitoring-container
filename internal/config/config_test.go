@@ -53,7 +53,8 @@ func TestRejectInvalidConfigurations(t *testing.T) {
 		"bad interval":                     valid + "interval: 0s\n",
 		"bad duration":                     valid + "interval: yesterday\n",
 		"no enabled targets":               strings.Replace(valid, "enabled: true", "enabled: false", 1),
-		"unsupported recovery":             valid + "    recovery:\n      enabled: true\n",
+		"recovery without incidents":       valid + "    recovery:\n      enabled: true\n",
+		"invalid recovery retries":         valid + "incidents:\n  enabled: true\n    recovery:\n      enabled: true\n      max_attempts_per_incident: 2\n",
 		"unknown probe meaning":            valid + "      docker_health:\n        meaning: magic\n",
 		"duplicate target":                 valid + "  - name: api\n    selector:\n      container_name: another-api\n",
 		"duplicate container":              valid + "  - name: second\n    selector:\n      container_name: example-api\n",
@@ -68,8 +69,40 @@ func TestRejectInvalidConfigurations(t *testing.T) {
 	}
 }
 
+func TestRecoveryConfiguration(t *testing.T) {
+	input := valid + `incidents:
+  enabled: true
+targets:
+  - name: api
+    selector:
+      container_name: example-api
+    monitoring:
+      enabled: true
+    recovery:
+      enabled: true
+      timeout: 20s
+      cooldown: 5m
+      max_attempts_per_incident: 1
+      max_attempts_per_hour: 2
+`
+	// Duplicate target proves recovery never broadens the exact allowlist.
+	if _, err := Decode(strings.NewReader(input)); err == nil {
+		t.Fatal("duplicate target should fail")
+	}
+	input = strings.Replace(input, valid, `server:
+  id: test-host
+`, 1)
+	cfg, err := Decode(strings.NewReader(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Targets[0].Recovery.Enabled || cfg.Targets[0].Recovery.Timeout != 20*time.Second {
+		t.Fatal("recovery config lost")
+	}
+}
+
 func TestExampleConfiguration(t *testing.T) {
-	for _, name := range []string{"pilot", "incidents"} {
+	for _, name := range []string{"pilot", "incidents", "recovery"} {
 		if _, err := Load("../../configs/" + name + ".example.yaml"); err != nil {
 			t.Fatal(err)
 		}

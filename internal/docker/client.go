@@ -18,6 +18,7 @@ import (
 var ErrNotFound = errors.New("target container not found")
 var ErrUnavailable = errors.New("Docker inspection unavailable")
 var ErrUnsupported = errors.New("Swarm task monitoring is not supported yet")
+var ErrRestartNotNeeded = errors.New("container is no longer eligible for restart")
 
 const maxResponseBytes = 4 << 20
 
@@ -40,6 +41,10 @@ type Inspector interface {
 	Inspect(context.Context, string) (Snapshot, error)
 }
 
+type Restarter interface {
+	Restart(context.Context, Snapshot) error
+}
+
 type Client struct {
 	http      *http.Client
 	transport *http.Transport
@@ -57,16 +62,18 @@ func New(socket string, timeout time.Duration) (*Client, error) {
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{Timeout: timeout}).DialContext(ctx, "unix", path)
 		},
-		MaxIdleConns:          1,
-		MaxIdleConnsPerHost:   1,
-		IdleConnTimeout:       30 * time.Second,
-		ResponseHeaderTimeout: timeout,
+		MaxIdleConns:        1,
+		MaxIdleConnsPerHost: 1,
+		IdleConnTimeout:     30 * time.Second,
+		// Each operation supplies its own context deadline. A shared transport
+		// timeout would incorrectly cap a configured recovery timeout.
+		ResponseHeaderTimeout: 0,
 	}
 	return &Client{
 		transport: transport,
 		http: &http.Client{
 			Transport:     transport,
-			Timeout:       timeout,
+			Timeout:       0,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil

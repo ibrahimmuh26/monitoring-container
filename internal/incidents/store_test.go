@@ -119,6 +119,18 @@ func TestPersistentThresholdsDedupAndOrderedEvents(t *testing.T) {
 	}
 }
 
+type fakeRestart struct {
+	calls    int
+	err      error
+	snapshot docker.Snapshot
+}
+
+func (f *fakeRestart) Restart(ctx context.Context, s docker.Snapshot) error {
+	f.calls++
+	f.snapshot = s
+	return f.err
+}
+
 type fakeLogs struct {
 	calls int
 	err   error
@@ -157,6 +169,53 @@ func TestProcessorSanitizesBeforePersistence(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestRecoveryOnlyForExitedTargetsAndPersistentLimits(t *testing.T) {
+	ctx := context.Background()
+	c := testConfig(t)
+	c.Incidents.FailureThreshold = 1
+	c.Targets[0].Recovery.Enabled = true
+	s := openTest(t)
+	r, _ := diagnostics.NewRedactor(nil)
+	restart := &fakeRestart{}
+	p := &Processor{Store: s, Config: c, Logs: &fakeLogs{}, Restart: restart, Redactor: r}
+	o := observation()
+	o.Container.State = "exited"
+	o.Container.DockerHealth = "unknown"
+	if err := p.Handle(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	if restart.calls != 1 || restart.snapshot.ID != o.Container.ID {
+		t.Fatalf("restart=%+v", restart)
+	}
+	var id string
+	if err := s.db.QueryRow(`SELECT id FROM incidents`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	i, err := s.Get(ctx, id)
+	if err != nil || i.Recovery != "requested" {
+		t.Fatalf("%+v %v", i, err)
+	}
+	if err := p.Handle(ctx, o); err != nil || restart.calls != 1 {
+		t.Fatal("recovery repeated", err)
+	}
+	// An unhealthy but still-running container is reported, never restarted.
+	c.Targets[0].Name = "unhealthy"
+	p.Config = c
+	o.Target = "unhealthy"
+	o.Container.State = "running"
+	o.Container.DockerHealth = "unhealthy"
+	if err := p.Handle(ctx, o); err != nil {
+		t.Fatal(err)
+	}
+	if restart.calls != 1 {
+		t.Fatal("running unhealthy container restarted")
+	}
+	allowed, reason, err := s.ReserveRecovery(ctx, "other", "api", c.Targets[0].Recovery, o.Time)
+	if err != nil || allowed || reason != "cooldown" {
+		t.Fatalf("%v %s %v", allowed, reason, err)
+	}
+}
+
 func TestInterruptedEvidenceAndCollectionFailure(t *testing.T) {
 	ctx := context.Background()
 	c := testConfig(t)

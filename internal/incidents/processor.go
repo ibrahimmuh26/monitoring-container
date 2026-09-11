@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ibrahimmuh26/monitoring-container/internal/agent"
@@ -15,12 +16,16 @@ type Processor struct {
 	Config   config.Config
 	Logs     docker.LogReader
 	Redactor *diagnostics.Redactor
+	Restart  docker.Restarter
 	Opened   func(id, reason string)
 }
 
 // Resume finalizes evidence interrupted by a previous process without pretending
 // that logs collected later describe the original failure window.
 func (p *Processor) Resume(ctx context.Context) error {
+	if err := p.Store.MarkReservedRecoveriesInterrupted(ctx); err != nil {
+		return err
+	}
 	for {
 		ids, err := p.Store.PendingEvidence(ctx)
 		if err != nil {
@@ -66,6 +71,9 @@ func (p *Processor) Handle(ctx context.Context, o agent.Observation) error {
 		} else if p.Config.Diagnostics.CollectLogs {
 			status = "no_container"
 		}
+		if err = p.recover(ctx, id, o, reason); err != nil {
+			return err
+		}
 		if err = p.Store.FinishEvidence(ctx, id, status, text); err != nil {
 			return err
 		}
@@ -74,6 +82,43 @@ func (p *Processor) Handle(ctx context.Context, o agent.Observation) error {
 		}
 	}
 	return p.Store.Prune(ctx, o.Time, p.Config.Incidents.Retention)
+}
+
+// recover has an intentionally narrow eligibility rule. A running unhealthy
+// service may have a shared dependency failure, so it is reported but untouched.
+func (p *Processor) recover(ctx context.Context, id string, o agent.Observation, reason string) error {
+	if reason != "container_exited" && reason != "container_dead" {
+		return nil
+	}
+	var target *config.Target
+	for i := range p.Config.Targets {
+		if p.Config.Targets[i].Name == o.Target {
+			target = &p.Config.Targets[i]
+			break
+		}
+	}
+	if target == nil || !target.Recovery.Enabled || p.Restart == nil {
+		return nil
+	}
+	allowed, _, err := p.Store.ReserveRecovery(ctx, id, o.Target, target.Recovery, o.Time)
+	if err != nil || !allowed {
+		return err
+	}
+	check, cancel := context.WithTimeout(ctx, target.Recovery.Timeout)
+	err = p.Restart.Restart(check, o.Container)
+	cancel()
+	status := "failed"
+	switch {
+	case err == nil:
+		status = "requested"
+	case errors.Is(err, docker.ErrRestartNotNeeded):
+		status = "not_needed"
+	case errors.Is(err, docker.ErrNotFound):
+		status = "not_found"
+	case errors.Is(err, docker.ErrUnsupported):
+		status = "unsupported"
+	}
+	return p.Store.FinishRecovery(ctx, id, status)
 }
 
 func classify(o agent.Observation, grace time.Duration) (string, bool) {

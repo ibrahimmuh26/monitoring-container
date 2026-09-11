@@ -30,6 +30,7 @@ type Incident struct {
 	Logs        string             `json:"logs"`
 	Closed      bool               `json:"closed"`
 	Clearance   *agent.Observation `json:"clearance,omitempty"`
+	Recovery    string             `json:"recovery"`
 }
 type Event struct {
 	ID                       int64
@@ -79,6 +80,7 @@ func Open(dir string, maxBytes int64) (_ *Store, err error) {
 		`CREATE TABLE IF NOT EXISTS delivery_control (key TEXT PRIMARY KEY, deadline INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS states (target TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, failures INTEGER NOT NULL, successes INTEGER NOT NULL, active TEXT NOT NULL, checked INTEGER NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS incidents (id TEXT PRIMARY KEY, target TEXT NOT NULL, reason TEXT NOT NULL, observation TEXT NOT NULL, opened INTEGER NOT NULL, closed INTEGER NOT NULL DEFAULT 0, log_status TEXT NOT NULL DEFAULT 'pending', logs TEXT NOT NULL DEFAULT '', chat_id TEXT NOT NULL, resolution TEXT NOT NULL DEFAULT '')`,
+		`CREATE TABLE IF NOT EXISTS recoveries (id INTEGER PRIMARY KEY AUTOINCREMENT, incident_id TEXT NOT NULL UNIQUE REFERENCES incidents(id) ON DELETE CASCADE, target TEXT NOT NULL, requested INTEGER NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '')`,
 		`CREATE TABLE IF NOT EXISTS outbox (id INTEGER PRIMARY KEY AUTOINCREMENT, incident_id TEXT NOT NULL REFERENCES incidents(id) ON DELETE CASCADE, kind TEXT NOT NULL, chat_id TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', attempts INTEGER NOT NULL DEFAULT 0, next_at INTEGER NOT NULL DEFAULT 0, UNIQUE(incident_id,kind))`,
 	} {
 		if _, err = s.db.Exec(statement); err != nil {
@@ -168,7 +170,7 @@ func (s *Store) Get(ctx context.Context, id string) (Incident, error) {
 	var i Incident
 	var raw, resolution string
 	var closed int64
-	err := s.db.QueryRowContext(ctx, `SELECT id,reason,observation,log_status,logs,closed,resolution FROM incidents WHERE id=?`, id).Scan(&i.ID, &i.Reason, &raw, &i.LogStatus, &i.Logs, &closed, &resolution)
+	err := s.db.QueryRowContext(ctx, `SELECT i.id,i.reason,i.observation,i.log_status,i.logs,i.closed,i.resolution,COALESCE(r.status,'not_requested') FROM incidents i LEFT JOIN recoveries r ON r.incident_id=i.id WHERE i.id=?`, id).Scan(&i.ID, &i.Reason, &raw, &i.LogStatus, &i.Logs, &closed, &resolution, &i.Recovery)
 	if err != nil {
 		return i, err
 	}

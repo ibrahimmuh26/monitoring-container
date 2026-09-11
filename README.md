@@ -1,10 +1,10 @@
 # Monitoring Container
 
-A read-only Docker monitoring agent with persistent incidents, opt-in log diagnostics, and Telegram reports. Controlled recovery is planned next.
+A Docker monitoring agent with persistent incidents, opt-in log diagnostics, Telegram reports, and narrowly scoped restart recovery for exited standalone containers.
 
 ## Status: early development
 
-The current implementation is **read-only monitoring with optional incident reporting**, not an auto-recovery system. Do not rely on it as your sole production monitor.
+The current implementation monitors incidents and can opt into a narrowly scoped restart policy. It is early development; do not rely on it as your sole production monitor.
 
 | Capability | Status |
 | --- | --- |
@@ -19,10 +19,11 @@ The current implementation is **read-only monitoring with optional incident repo
 | Telegram summaries and opt-in JSON diagnostic attachments | Implemented |
 | Docker events, HTTP probes, resource snapshots, crash-loop detection | Planned |
 | Ticketing adapters | Planned |
-| Automatic recovery and deployment coordination | Planned |
+| One restart for an exited/dead allowlisted standalone container | Implemented, explicit opt-in |
+| Retry recovery, running-unhealthy recovery, deployment coordination | Planned |
 | Stable Compose selectors and Swarm service/task monitoring | Planned |
 
-Unknown configuration keys and `recovery.enabled: true` are rejected. The earlier design-only configuration schema has been reduced to supported fields; do not use old scaffold examples.
+Unknown configuration keys are rejected. Recovery remains disabled by default; this initial policy accepts exactly one restart attempt for an opened `exited`/`dead` incident.
 
 ## Requirements
 
@@ -30,7 +31,7 @@ Unknown configuration keys and `recovery.enabled: true` are rejected. The earlie
 - Docker Engine 25+ (API 1.44+) via a local Unix socket.
 - An existing standalone container selected by exact name.
 
-This adapter intentionally uses a small standard-library HTTP client rather than the full Docker SDK. It exposes container inspect and bounded log reads only, disables redirects, limits response size, and does not use Docker environment variables or TCP endpoints. Logs are fetched using the immutable container ID captured by exact-name inspection, never by a potentially reused name.
+This adapter intentionally uses a small standard-library HTTP client rather than the full Docker SDK. With recovery disabled it exposes container inspect and bounded log reads only. With an enabled per-target policy it can additionally issue one verified restart request for the immutable ID of an exited/dead target. It disables redirects, limits response size, and does not use Docker environment variables or TCP endpoints. Logs are fetched using the immutable container ID captured by exact-name inspection, never by a potentially reused name.
 
 ## Quick start: local binary
 
@@ -65,7 +66,7 @@ docker compose logs -f agent
 
 The image runs as a non-root user. Compose grants its group access to the socket using the host socket GID. Never make the Docker socket world-writable. On hosts using ACLs or security labeling, additional host-specific configuration may be required.
 
-The example uses a read-only root filesystem, no capabilities, no published ports, bounded Docker log rotation, and no agent restart policy. The named data volume is writable and used only when incidents are enabled. The image initializes it for UID 65532. Mount the same volume when recreating the agent; never delete it as part of routine updates. The image has no shell and no built-in Docker healthcheck; process existence alone would not prove observation is progressing.
+The example uses a read-only root filesystem, no capabilities, no published ports, bounded Docker log rotation, and no agent restart policy. A read-only socket mount does not prevent Docker API mutations if recovery is enabled. The named data volume is writable and used only when incidents are enabled. The image initializes it for UID 65532. Mount the same volume when recreating the agent; never delete it as part of routine updates. The image has no shell and no built-in Docker healthcheck; process existence alone would not prove observation is progressing.
 
 Docker Desktop uses a different host socket location in some setups. Configure `docker.socket` for native binary usage, or adapt the bind source for container usage.
 
@@ -77,15 +78,15 @@ Scans are sequential, with per-target deadlines and a delay after the completed 
 
 Container lookup is verified against the returned exact name, preventing Docker ID-prefix fallback from selecting a different container. Name reuse is observed as a replacement; no mutation follows it. Docker API response bodies, environment variables, raw healthcheck output, and daemon error bodies are not emitted.
 
-`docker_health.meaning` accepts `unknown`, `liveness`, or `readiness`. Review the application's probe before setting this metadata. No value enables recovery. Readiness failure alone must never become an automatic restart rule.
+`docker_health.meaning` accepts `unknown`, `liveness`, or `readiness`. Review the application's probe before setting this metadata. Readiness failure and a running `unhealthy` container never become restart rules in this release. See [`configs/recovery.example.yaml`](configs/recovery.example.yaml) and [`docs/recovery.md`](docs/recovery.md) for the only supported automatic action.
 
 ## Safety and future architecture
 
-Docker socket access can grant host-level control even though the current adapter only issues read requests. A read-only socket mount is **not** an API authorization boundary. Keep the image trusted and do not expose Docker API publicly.
+Docker socket access can grant host-level control. With recovery disabled the adapter only issues read requests; enabling recovery also permits a Docker `POST /restart` for the exact captured container ID. A read-only socket mount is **not** an API authorization boundary. Keep the image trusted and do not expose Docker API publicly.
 
 Observation output still contains infrastructure metadata such as container names and image IDs; restrict access to logs. Diagnostic collection and transmission each require explicit opt-in. Redaction is best-effort, not a guarantee that arbitrary customer data is safe to transmit. Review application-specific redaction rules or leave log collection disabled.
 
-The architecture is one agent per host, a persistent incident store/outbox, and Telegram delivery, with policy-controlled recovery and ticketing adapters planned next. A process lock prevents multiple incident-enabled agents from sharing one data directory; separate directories do not enforce host-wide ownership. Application recovery and root-cause ticket resolution remain separate. An agent cannot reliably report its own host being down; external monitoring is required.
+The architecture is one agent per host, a persistent incident store/outbox, Telegram delivery, constrained policy-controlled recovery, and ticketing adapters planned next. A process lock prevents multiple incident-enabled agents from sharing one data directory; separate directories do not enforce host-wide ownership. Application recovery and root-cause ticket resolution remain separate. An agent cannot reliably report its own host being down; external monitoring is required.
 
 An agent container cannot access host services via its own `127.0.0.1`. When HTTP probes are implemented, validate agent network reachability explicitly.
 
@@ -99,7 +100,7 @@ make build
 make check-config
 ```
 
-`make lint` runs `go vet` and a formatting check. `make test` runs unit/adapter tests with the race detector and coverage, using fake Docker responses and a disposable Unix socket; it does not touch a real Docker daemon. `make smoke-test` additionally checks the built image against a real local Docker daemon using a disposable fixture; it creates and cleans up only its own test container. Run it on a development daemon, not production. Real image checks are documented in [`docs/implementation-plan.md`](docs/implementation-plan.md).
+`make lint` runs `go vet` and a formatting check. `make test` runs unit/adapter tests with the race detector and coverage, using fake Docker responses and a disposable Unix socket; it does not touch a real Docker daemon. `make smoke-test` additionally checks the built image against a real local Docker daemon using disposable fixtures; it verifies observation, persistence, and a constrained recovery restart against only its own test container. Run it on a development daemon, not production. Real image checks are documented in [`docs/implementation-plan.md`](docs/implementation-plan.md).
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md). Never submit production configuration, credentials, or diagnostics.
 

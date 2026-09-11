@@ -57,7 +57,13 @@ func (t *Telegram) Send(ctx context.Context, e incidents.Event, i incidents.Inci
 	if e.Kind == "condition_cleared" {
 		title = "CONDITION CLEARED"
 	}
-	text := title + " — " + i.ID + "\nServer: " + i.Observation.Server + "\nTarget: " + i.Observation.Target + "\nDetected: " + i.Observation.Time.Format(time.RFC3339) + "\nInitial condition: " + i.Reason + "\nEvidence: " + i.LogStatus + "\nAction: none (monitoring only)\nApplication health: not fully verified. Root cause not established."
+	action := "none (monitoring only)"
+	if i.Recovery == "requested" {
+		action = "restart requested; post-restart health not yet verified"
+	} else if i.Recovery != "" && i.Recovery != "not_requested" {
+		action = "restart not completed: " + i.Recovery
+	}
+	text := title + " — " + i.ID + "\nServer: " + i.Observation.Server + "\nTarget: " + i.Observation.Target + "\nDetected: " + i.Observation.Time.Format(time.RFC3339) + "\nInitial condition: " + i.Reason + "\nEvidence: " + i.LogStatus + "\nAction: " + action + "\nApplication health: not fully verified. Root cause not established."
 	if e.Kind == "condition_cleared" {
 		text += "\nConfigured clear threshold reached; this does not close a root-cause ticket."
 		if i.Clearance != nil {

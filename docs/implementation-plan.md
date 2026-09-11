@@ -12,7 +12,7 @@ The adapter deliberately uses the standard-library HTTP client with fixed API 1.
 
 SQLite incident state, per-data-directory process locking, bounded opt-in log collection, conservative redaction, poll-based thresholds, startup grace, retention, a persistent outbox, Telegram summaries, and optional diagnostic attachments are implemented. See `docs/incidents.md` for setup and limits.
 
-Host-wide ownership across separate directories, deployment coordination, HTTP probes, resource diagnostics, Docker events, and recovery remain unimplemented. Configurations attempting to enable recovery or unsupported integrations are rejected. This is not completion of all milestones below.
+Host-wide ownership across separate directories, deployment coordination, HTTP probes, resource diagnostics, Docker events, retries, and broad recovery remain unimplemented. A constrained single restart of an exact standalone exited/dead target is implemented; see `docs/recovery.md`. Configurations attempting to enable recovery or unsupported integrations are rejected. This is not completion of all milestones below.
 
 ## Milestones
 
@@ -44,16 +44,16 @@ Host-wide ownership across separate directories, deployment coordination, HTTP p
 
 ### 4. Controlled recovery
 
-- Disabled by default and configurable per target.
-- Confirm recovery ownership; avoid conflict with Docker, autoheal, panels, or deployments.
-- Respect explicit maintenance inhibition; do not assume deployments are always detectable.
-- Acquire a per-target lock; enforce host concurrency, cooldown, per-incident and rolling limits.
-- Persist action intent before execution; reconcile ambiguous outcomes after agent restarts.
-- Recheck target identity and state immediately before action.
-- Capture diagnostics first within a fixed deadline.
-- Do not restart for readiness failure alone.
-- Verify application liveness where available; otherwise report only observed Docker state.
-- Escalate instead of repeating ineffective recovery indefinitely.
+- Disabled by default and configurable per target. **Implemented:** exact standalone `exited`/`dead` target only.
+- Confirm recovery ownership; avoid conflict with Docker, autoheal, panels, or deployments. **Still required per deployment.**
+- Respect explicit maintenance inhibition; do not assume deployments are always detectable. **Manual maintenance must disable/stop the agent.**
+- Acquire a per-target lock; enforce host concurrency, cooldown, per-incident and rolling limits. **Implemented:** transactional target cooldown/hour limit and one incident reservation; host concurrency/retries are pending.
+- Persist action intent before execution; reconcile ambiguous outcomes after agent restarts. **Implemented:** ambiguous reservations become `interrupted` and do not retry.
+- Recheck target identity and state immediately before action. **Implemented:** immutable ID, exact name, exited/dead, non-Swarm check.
+- Capture diagnostics first within a fixed deadline. **Implemented.**
+- Do not restart for readiness failure alone. **Implemented:** running unhealthy is never restarted.
+- Verify application liveness where available; otherwise report only observed Docker state. **Pending HTTP/liveness verification.**
+- Escalate instead of repeating ineffective recovery indefinitely. **One action only; no retries.**
 
 ### 5. Pilot rollout
 

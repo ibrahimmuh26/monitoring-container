@@ -16,6 +16,7 @@ fmt:
 check-config:
 	go run ./cmd/monitoring-container --config configs/pilot.example.yaml --check-config
 	go run ./cmd/monitoring-container --config configs/incidents.example.yaml --check-config
+	go run ./cmd/monitoring-container --config configs/recovery.example.yaml --check-config
 
 # Build monitoring-container:local first. Creates disposable local containers.
 smoke-test:

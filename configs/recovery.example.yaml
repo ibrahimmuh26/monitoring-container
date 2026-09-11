@@ -1,0 +1,48 @@
+# Opt-in initial recovery policy. Test this exact policy only on a disposable
+# development container before enabling it for an application.
+server:
+  id: example-host
+docker:
+  socket: unix:///var/run/docker.sock
+  timeout: 3s
+interval: 30s
+
+incidents:
+  enabled: true
+  directory: /var/lib/monitoring-container
+  failure_threshold: 3
+  success_threshold: 3
+  startup_grace: 60s
+  retention: 168h
+  max_bytes: 67108864
+
+diagnostics:
+  collect_logs: true
+  timeout: 5s
+  log_window: 10m
+  max_lines: 200
+  max_bytes: 32768
+  redact_patterns: []
+
+telegram:
+  enabled: false
+  token_file: /run/secrets/telegram_bot_token
+  chat_id: ""
+  send_logs: false
+  timeout: 10s
+
+targets:
+  - name: example-api
+    selector:
+      container_name: example-api
+    monitoring:
+      enabled: true
+      docker_health:
+        meaning: unknown
+    recovery:
+      enabled: true
+      timeout: 20s
+      cooldown: 5m
+      # This initial implementation deliberately permits exactly one action.
+      max_attempts_per_incident: 1
+      max_attempts_per_hour: 2

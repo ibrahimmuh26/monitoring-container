@@ -47,7 +47,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *check {
-		fmt.Fprintln(stdout, "Configuration valid. Observation-only mode; recovery is disabled.")
+		fmt.Fprintln(stdout, "Configuration valid. One-shot mode performs no incident handling or recovery.")
 		return 0
 	}
 	client, err := docker.New(cfg.Docker.Socket, cfg.Docker.Timeout)
@@ -59,7 +59,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	observer := agent.New(cfg, client)
 	encoder := json.NewEncoder(stdout)
 	emit := func(observation agent.Observation) error { return encoder.Encode(observation) }
-	fmt.Fprintln(stderr, "Starting read-only Docker agent. Automatic recovery is disabled.")
+	fmt.Fprintln(stderr, "Starting Docker monitoring agent. Recovery follows per-target policy.")
 	if *once {
 		complete, err := observer.Scan(ctx, emit)
 		if err != nil || !complete {
@@ -83,7 +83,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "Invalid redaction configuration")
 			return 2
 		}
-		processor := &incidents.Processor{Store: store, Config: cfg, Logs: client, Redactor: redactor,
+		processor := &incidents.Processor{Store: store, Config: cfg, Logs: client, Restart: client, Redactor: redactor,
 			Opened: func(id, reason string) { fmt.Fprintln(stderr, "Incident opened:", id, "condition:", reason) },
 		}
 		if err := processor.Resume(runCtx); err != nil {

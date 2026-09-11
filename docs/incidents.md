@@ -59,7 +59,7 @@ docker compose -f compose.yaml -f compose.telegram.yaml up -d agent
 
 The container image includes CA certificates and sends HTTPS requests to `api.telegram.org`. No inbound Telegram webhook or bot commands are provided. TLS verification stays enabled; redirect responses are not followed. Transport errors and Telegram response bodies are not printed, because request URLs include the bot token.
 
-Summaries contain incident ID, server/target, detection time, reason, evidence status, and an explicit statement that no recovery action was taken. `telegram.send_logs: true` adds sanitized evidence as a JSON document on the opening event, with a summary caption. It requires `diagnostics.collect_logs: true`. Resolution events always use a summary, including the final observed Docker state and timestamp.
+Summaries contain incident ID, server/target, detection time, reason, evidence status, and recovery action status. With recovery disabled they explicitly state no action was taken. With the constrained restart policy enabled, `requested` means Docker accepted a restart request; it does not prove post-restart application health. See [recovery.md](recovery.md). `telegram.send_logs: true` adds sanitized evidence as a JSON document on the opening event, with a summary caption. It requires `diagnostics.collect_logs: true`. Resolution events always use a summary, including the final observed Docker state and timestamp.
 
 ## Durable delivery
 
