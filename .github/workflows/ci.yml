@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.25.x', '1.26.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+      - run: make lint test build check-config
+      - run: git diff --exit-code -- go.mod go.sum
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t monitoring-container:ci .
+      - run: docker run --rm --read-only -v "$PWD/configs/pilot.example.yaml:/etc/monitoring-container/config.yaml:ro" monitoring-container:ci --check-config
+      - run: IMAGE=monitoring-container:ci make smoke-test

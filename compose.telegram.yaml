@@ -1,0 +1,10 @@
+# Optional overlay after creating the token file and reviewing local config.
+# docker compose -f compose.yaml -f compose.telegram.yaml up -d agent
+services:
+  agent:
+    secrets:
+      - telegram_bot_token
+
+secrets:
+  telegram_bot_token:
+    file: ./secrets/telegram_bot_token

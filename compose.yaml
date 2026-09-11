@@ -1,0 +1,31 @@
+services:
+  agent:
+    build: .
+    image: monitoring-container:local
+    # Match the host socket GID; never chmod the Docker socket to 666.
+    user: "65532:${DOCKER_SOCKET_GID:?Set DOCKER_SOCKET_GID to the Docker socket group ID}"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: "no"
+    stop_grace_period: 30s
+    volumes:
+      - agent-data:/var/lib/monitoring-container
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+      - type: bind
+        source: ./configs/pilot.local.yaml
+        target: /etc/monitoring-container/config.yaml
+        read_only: true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  agent-data:

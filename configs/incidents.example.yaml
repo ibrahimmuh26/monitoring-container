@@ -1,0 +1,46 @@
+# Opt-in monitoring with persisted incidents; never restarts applications.
+server:
+  id: example-host
+docker:
+  socket: unix:///var/run/docker.sock
+  timeout: 3s
+interval: 30s
+
+incidents:
+  enabled: true
+  directory: /var/lib/monitoring-container
+  failure_threshold: 3
+  success_threshold: 3
+  startup_grace: 60s
+  retention: 168h
+  max_bytes: 67108864
+
+diagnostics:
+  # Review your application's logs before enabling collection.
+  collect_logs: false
+  timeout: 5s
+  log_window: 10m
+  max_lines: 200
+  max_bytes: 32768
+  # Matching lines are dropped. Adapt rules to application-specific personal data.
+  redact_patterns: []
+
+telegram:
+  enabled: false
+  token_file: /run/secrets/telegram_bot_token
+  # Numeric group or user chat ID, supplied only in local configuration.
+  chat_id: ""
+  # Explicit second opt-in: sanitized logs leave the server as a JSON attachment.
+  send_logs: false
+  timeout: 10s
+
+targets:
+  - name: example-api
+    selector:
+      container_name: example-api
+    monitoring:
+      enabled: true
+      docker_health:
+        meaning: unknown
+    recovery:
+      enabled: false

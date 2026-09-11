@@ -2,7 +2,7 @@
 
 ## Development status
 
-No supported production release exists yet. The current repository contains a design scaffold only.
+No supported production release exists yet. The agent reads Docker state and optionally collects logs, persists incidents, and sends Telegram reports. It cannot restart applications. Log collection and transmission are separately opt-in; redaction cannot guarantee that arbitrary application data is safe to transmit.
 
 ## Reporting vulnerabilities
 

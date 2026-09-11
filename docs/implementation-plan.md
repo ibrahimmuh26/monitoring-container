@@ -4,6 +4,16 @@
 
 Build independently of Watchtower. Start with one explicitly allowlisted standalone Docker container (`example-api`) on a pilot host. Do not deploy until a matching disposable test environment has validated behavior. Add Docker Swarm support separately; never assume standalone recovery semantics apply to Swarm tasks.
 
+## Current implementation
+
+Foundation and initial polling are implemented: strict configuration, a read-only Unix-socket Docker adapter, exact-name validation, graceful shutdown, one-shot/config-check modes, JSON observations, tests, CI, and a container image.
+
+The adapter deliberately uses the standard-library HTTP client with fixed API 1.44 (Docker Engine 25+) instead of introducing the full Docker SDK for inspect and bounded log reads. Review this choice when event ingestion or mutation APIs are added.
+
+SQLite incident state, per-data-directory process locking, bounded opt-in log collection, conservative redaction, poll-based thresholds, startup grace, retention, a persistent outbox, Telegram summaries, and optional diagnostic attachments are implemented. See `docs/incidents.md` for setup and limits.
+
+Host-wide ownership across separate directories, deployment coordination, HTTP probes, resource diagnostics, Docker events, and recovery remain unimplemented. Configurations attempting to enable recovery or unsupported integrations are rejected. This is not completion of all milestones below.
+
 ## Milestones
 
 ### 1. Agent foundation
@@ -63,7 +73,18 @@ Build independently of Watchtower. Start with one explicitly allowlisted standal
 
 ## Verification requirements
 
-Implement and run real repository test/build/lint commands once source code exists.
+Run `make fmt lint test build check-config`. Tests must not contact production infrastructure. Current tests cover configuration, read-only inspect, exact target matching, unavailable/missing/unsupported targets, response bounds, timeouts, deduplication, identity replacement, output failure, and shutdown. Additional tests cover persisted threshold counters, incident deduplication, interrupted evidence, log redaction, immutable-ID log reads, notification ordering, retries, retention, and process ownership. Telegram HTTP behavior is tested with fake transports, not real credentials. The remaining requirements below are acceptance criteria for subsequent milestones.
+
+Image checks:
+
+```bash
+docker build -t monitoring-container:local .
+docker run --rm --read-only -v "$PWD/configs/pilot.example.yaml:/etc/monitoring-container/config.yaml:ro" monitoring-container:local --check-config
+```
+
+These image checks do not mount the Docker socket or mutate any application.
+
+For an actual Engine API smoke test, run `make smoke-test` after building the image on a development Docker daemon. The script creates its own disposable fixture, mounts the socket only into the observer, verifies exact container identity and unknown application health, then stops only its own fixture. It uses a root observer for socket portability in this test only; production Compose runs non-root. Do not run this smoke test on production.
 
 Automated tests must cover:
 
